@@ -661,6 +661,39 @@ fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
     }
 }
 
-fn void? Tbm.remove(&self, TbmAllocator alloc, Cidr prefix) {
-    self.root.remove(alloc, prefix)!;
+fn void? Tbm.remove(&self, Cidr prefix) {
+    self.root.remove(self.alloc, prefix)!;
+}
+
+fn void Tbm.init(&self, usz nodes_cnt) {
+    SlabAllocator *slab = mem::new(SlabAllocator);
+    slab.init(nodes_cnt);
+    self.alloc = slab;
+}
+
+fn void Tbm.init_mem(&self, TbmAllocator alloc) {
+    self.alloc = alloc;
+}
+
+fn void TbmNode.free(&self, TbmAllocator alloc) {
+    @foreach_1bit(self.external; uint pos) {
+        TbmNode *node = self.next_exl( { (StrideTypeInner) pos } );
+        node.free(alloc);
+    };
+
+    usz exl_nodes = self.count_exl_nodes();
+    usz inl_nodes = self.count_inl_nodes();
+    TbmNode *node = (TbmNode*)self.next - inl_nodes;
+    alloc.free(node, exl_nodes + inl_nodes);
+}
+
+fn void Tbm.free(&self) {
+    self.root.free(self.alloc);
+    SlabAllocator *slab = (SlabAllocator*)self.alloc;
+    free(slab);
+    self.alloc = null;
+}
+
+fn void Tbm.free_mem(&self) {
+    self.root.free(self.alloc);
 }

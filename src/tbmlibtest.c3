@@ -756,7 +756,7 @@ fn void? load_ipv4_fib_tbm(Allocator alloc, String filename, FibTbm *tbm) {
                 uint prefixlen = line.to_uint()!;
                 FibCidr c;
                 c.from(&addr, prefixlen);
-                tbm.insert(c, c)!!;
+                tbm.insert(c, c)!;
             }
         } else {
             break;
@@ -865,9 +865,9 @@ fn void? assert_ipv6_fib_lookup_matches(Allocator alloc, String filename, FibSeg
             if (idx % 2 == 0) {
                 ip = net::ipv6_from_str(line)!.ip6.val;
             } else {
-                uint range_idx = seg_list.do_lpm(ip)!!;
+                uint range_idx = seg_list.do_lpm(ip)!;
                 FibCidr6 range_cidr = iprange::cidr_from_iprange{uint128}(rl.[range_idx]);
-                uint tbm_idx = tbm.lookup(ip)!!;
+                uint tbm_idx = tbm.lookup(ip)!;
                 FibCidr6 tbm_cidr = iprange::cidr_from_iprange{uint128}(rl.[tbm_idx]);
                 assert(range_cidr.ip == tbm_cidr.ip);
                 assert(range_cidr.cidr == tbm_cidr.cidr);
@@ -920,9 +920,9 @@ fn void? assert_ipv4_fib_lookup_matches(Allocator alloc, String filename, FibSeg
             if (idx % 2 == 0) {
                 ip = net::ipv4_from_str(line)!.ip4.val;
             } else {
-                uint range_idx = seg_list.do_lpm(ip)!!;
+                uint range_idx = seg_list.do_lpm(ip)!;
                 FibCidr range_cidr = iprange::cidr_from_iprange{uint}(rl.[range_idx]);
-                FibCidr tbm_cidr = tbm.lookup(ip)!!;
+                FibCidr tbm_cidr = tbm.lookup(ip)!;
                 assert(range_cidr.ip == tbm_cidr.ip);
                 assert(range_cidr.cidr == tbm_cidr.cidr);
             }
@@ -931,6 +931,20 @@ fn void? assert_ipv4_fib_lookup_matches(Allocator alloc, String filename, FibSeg
         }
         idx++;
     }
+}
+
+fn void test_tbm_free() @test {
+    FibTbm tbm;
+    FibSlabAlloc slab;
+    slab.init(1000_000);
+    defer slab.release();
+    tbm.init_mem(&slab);
+
+    @pool() {
+        load_ipv4_fib_tbm(tmem, "ipv4_fib.txt", &tbm)!!;  
+        tbm.free_mem();
+    };
+    assert(slab.slab.free_nodes == 1000_000);
 }
 
 fn void test_ipv4_fib_lookup_consistency() @test {
