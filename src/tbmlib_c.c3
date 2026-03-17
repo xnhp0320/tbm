@@ -1,27 +1,32 @@
-module tbmlib_c;
+module tbmlib_c @cname("tbm");
 import tbmlib::cidr;
 import tbmlib;
 
 const uint FIB_TBM_STRIDE = 5;
-alias FibCidr = cidr::Cidr {uint};
-alias FibTbm = Tbm {FIB_TBM_STRIDE, uint, uint};
+alias FibCidr @export("FibCidr") = cidr::Cidr {uint};
+alias FibTbm @export("FibTbm") = Tbm {FIB_TBM_STRIDE, uint, uint};
 
-struct TbmTree @cname("TbmTree") {
-    FibTbm tbm;
+fn void tbm_init(FibTbm *self, usz nodes_cnt) @export("tbm_init") {
+    self.init(nodes_cnt);
 }
 
-fn void TbmTree.init(&self, usz nodes_cnt) @export @cname("tbm_init") {
-    self.tbm.init(nodes_cnt);
+fn void? tbm_insert(FibTbm *self, FibCidr prefix, uint v) @export("tbm_insert") {
+    return self.insert(prefix, v);
 }
 
-fn void? TbmTree.insert(&self, FibCidr prefix, uint v) @export @cname("tbm_insert") {
-    return self.tbm.insert(prefix, v);
+fn void? tbm_remove(FibTbm *self, FibCidr prefix) @export("tbm_remove") {
+    return self.remove(prefix);
 }
 
-fn void? TbmTree.remove(&self, FibCidr prefix) @export @cname("tbm_remove") {
-    return self.tbm.remove(prefix);
+fn void tbm_free(FibTbm *self) @export("tbm_free") {
+    return self.free();
 }
 
-fn void TbmTree.free(&self) @export @cname("tbm_free") {
-    return self.tbm.free();
+alias IteratorFunc @export("TbmIterateFunc") = fn void(FibCidr *cidr, uint *value, void *aux);
+fn void tbm_iterate(FibTbm *self, IteratorFunc f, void *aux) @export("tbm_iterate") {
+    return self.iterate(f, aux);
+}
+
+fn uint? tbm_lookup(FibTbm *self, uint v) @export("tbm_lookup") {
+    return self.lookup(v);
 }
