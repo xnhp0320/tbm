@@ -7,7 +7,7 @@ import tbmlib::common;
 
 typedef IpRange = inline range::Range {KeyType};
 
-fn usz? IpRange.to_format(&self, Formatter *f) @dynamic {
+fn sz? IpRange.to_format(&self, Formatter *f) @dynamic {
     return f.printf("[%x %x]", self.start, self.end);
 }
 
@@ -18,8 +18,8 @@ alias Cidr @private = cidr::Cidr {KeyType};
 fn IpRange iprange_from_cidr(Cidr cidr) {
     IpRange self;
     self.start = cidr.ip;
-    if (cidr.cidr < $typeof(cidr.ip).sizeof * 8) {
-        self.end = cidr.ip | (((KeyType)1 << ($typeof(cidr.ip).sizeof * 8 - cidr.cidr)) - 1);
+    if (cidr.cidr < $typeof(cidr.ip)::size * 8) {
+        self.end = cidr.ip | (((KeyType)1 << ($typeof(cidr.ip)::size * 8 - cidr.cidr)) - 1);
     } else {
         self.end = cidr.ip;
     }
@@ -28,7 +28,7 @@ fn IpRange iprange_from_cidr(Cidr cidr) {
 }
 
 fn Cidr cidr_from_iprange(IpRange r) {
-    return { .ip = r.start, .cidr = (uint)(KeyType.sizeof * 8 - (r.end - r.start).popcount()) };
+    return { .ip = r.start, .cidr = (uint)(KeyType::size * 8 - (r.end - r.start).popcount()) };
 }
 
 alias IpRangeList = List {IpRange};
@@ -89,7 +89,7 @@ fn bool Seg.equals(self, Seg other) @operator(==) {
     return self.r.start == other.r.start && self.r.end == other.r.end && self.idx == other.idx;
 }
 
-fn usz? Seg.to_format(&self, Formatter *f) @dynamic {
+fn sz? Seg.to_format(&self, Formatter *f) @dynamic {
     return f.printf("[%x %x] %s\n", self.r.start, self.r.end, self.idx);
 }
 
@@ -110,11 +110,11 @@ fn uint? SegList.do_lpm(&self, KeyType ip) {
         return common::MISSING~;
     }
 
-    isz lo = 0;
-    isz hi = (isz)self.len() - 1;
+    sz lo = 0;
+    sz hi = (sz)self.len() - 1;
 
     while (lo <= hi) {
-        isz mid = lo + ((hi - lo) / 2);
+        sz mid = lo + ((hi - lo) / 2);
         Seg seg = self.[(usz)mid];
         if (ip < seg.r.start) {
             hi = mid - 1;

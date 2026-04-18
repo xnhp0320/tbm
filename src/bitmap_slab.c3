@@ -1,6 +1,6 @@
 module tbmlib::bitmap_slab <NodeType>;
 
-const usz BITS_PER_WORD = ulong.sizeof * 8;
+const usz BITS_PER_WORD = ulong::size * 8;
 const usz SEGMENT_CACHE_SIZE = 32;
 
 struct FreeSegment {
@@ -42,7 +42,7 @@ fn void BitmapSlab.init(&self, usz total_nodes) {
     self.bitmap = mem::alloc_array(ulong, bitmap_words);
     
     foreach (&bm : self.bitmap) {
-        *bm = ulong.max;
+        *bm = ulong::max;
     }
 
     usz tail = total_nodes % BITS_PER_WORD;
@@ -104,7 +104,7 @@ fn void BitmapSlab.set_range(&self, usz offset, usz node_count, bool mark_free) 
 
 fn void BitmapSlab.clear_range(&self, usz offset, usz node_count) {
     char *bytes = (char*)(&self.storage[offset]);
-    usz total_bytes = node_count * NodeType.sizeof;
+    usz total_bytes = node_count * NodeType::size;
     mem::clear(bytes, total_bytes);
 }
 
@@ -118,14 +118,14 @@ fn void BitmapSlab.cache_remove(&self, usz idx) {
     self.cache_entries--;
 }
 
-fn isz BitmapSlab.find_cache_fit(&self, usz node_count) {
-    isz best = -1;
+fn sz BitmapSlab.find_cache_fit(&self, usz node_count) {
+    sz best = -1;
     usz best_len = 0;
     usz i = 0;
     while (i < self.cache_entries) {
         FreeSegment seg = self.segment_cache[i];
         if (seg.len >= node_count && (best < 0 || seg.len < best_len)) {
-            best = (isz)i;
+            best = (sz)i;
             best_len = seg.len;
         }
         i++;
@@ -234,9 +234,9 @@ fn usz BitmapSlab.ptr_offset(&self, void *ptr) {
     uptr start = (uptr)self.storage.ptr;
     uptr addr = (uptr)ptr;
     assert(addr >= start);
-    assert(addr < start + self.storage.len * NodeType.sizeof);
-    assert((addr - start) % NodeType.sizeof == 0);
-    return (addr - start) / NodeType.sizeof;
+    assert(addr < start + self.storage.len * NodeType::size);
+    assert((addr - start) % NodeType::size == 0);
+    return (addr - start) / NodeType::size;
 }
 
 fn void*? BitmapSlab.alloc(&self, usz node_count) {
@@ -251,7 +251,7 @@ fn void*? BitmapSlab.alloc(&self, usz node_count) {
     self.stats.alloc_requests++;
     usz offset;
     usz run_len;
-    isz cached_idx = self.find_cache_fit(node_count);
+    sz cached_idx = self.find_cache_fit(node_count);
     if (cached_idx >= 0) {
         self.stats.alloc_cache_hits++;
         offset = self.segment_cache[(usz)cached_idx].offset;

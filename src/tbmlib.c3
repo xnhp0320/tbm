@@ -8,7 +8,7 @@ macro bool @cidr_valid(#cidr) {
         return #cidr.ip == 0;
     }
 
-    $typeof(#cidr.ip) mask = $typeof(#cidr.ip).max << ($typeof(#cidr.ip).sizeof * 8 - #cidr.cidr);
+    $typeof(#cidr.ip) mask = $typeof(#cidr.ip)::max << ($typeof(#cidr.ip)::size * 8 - #cidr.cidr);
     return #cidr.ip & mask == #cidr.ip;
 }
 
@@ -16,12 +16,12 @@ macro bool @cidr_valid(#cidr) {
 <* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
 *>
 macro @remove_wildcard(#cidr) {
-    return #cidr.cidr == 0 ? 0 : (uint)(#cidr.ip >> ($typeof(#cidr.ip).sizeof * 8 - #cidr.cidr));
+    return #cidr.cidr == 0 ? 0 : (uint)(#cidr.ip >> ($typeof(#cidr.ip)::size * 8 - #cidr.cidr));
 }
 
 macro stride_mask($Type, shift) {
     var mask = (1u << shift) - 1;
-    return ($Type)mask << ($Type.sizeof * 8 - shift);
+    return ($Type)mask << ($Type::size * 8 - shift);
 }
 
 interface TbmAllocator {
@@ -95,7 +95,7 @@ macro gen_inl_check_map() {
     $for var $prefix = 0u; $prefix < (1 << (STRIDE - 1)); $prefix++:
         BitmapType $check_bitmap;
         var $p = $prefix;
-        $for var $len = STRIDE - 1; $len >= 0; $len --:
+        $for var $len = (int)(STRIDE - 1); $len >= 0; $len --:
             var $pos = @inl_bitpos($p, $len);
             $check_bitmap = @bitmap_set($check_bitmap, $pos);
             $p >>= 1;
@@ -142,12 +142,12 @@ macro @shift_cidr(#cidr) {
 }
 
 <* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
-   @require $typeof(#cidr).kindof == TypeKind.POINTER
+   @require $typeof(#cidr)::kind == TypeKind.POINTER
    @require #cidr.cidr >= STRIDE
 *>
 macro StrideType @cidr_shift(#cidr) {
     defer @shift_cidr(#cidr);
-    return {(StrideTypeInner) ((#cidr.ip & stride_mask($typeof(#cidr.ip), STRIDE)) >> ($typeof(#cidr.ip).sizeof * 8 - STRIDE))};
+    return {(StrideTypeInner) ((#cidr.ip & stride_mask($typeof(#cidr.ip), STRIDE)) >> ($typeof(#cidr.ip)::size * 8 - STRIDE))};
 }
 
 fn void InlStrideType.from(&self, StrideType stride) {
@@ -162,29 +162,29 @@ struct Cidr (Printable) {
     uint cidr;
 }
 
-fn usz? Cidr.to_format(&self, Formatter *f) @dynamic {
-    var $fmt = @sprintf("0x%%0%sx", KeyType.sizeof * 2);
+fn sz? Cidr.to_format(&self, Formatter *f) @dynamic {
+    var $fmt = @sprintf("0x%%0%sx", KeyType::size * 2);
     return f.printf($fmt +++ "/%d", self.ip, self.cidr);
 }
 
 fn void Cidr.from(&self, InetAddress *addr, uint cidr) @if(KeyType == uint) {
     assert(addr.is_ipv6 == false);
-    KeyType mask = cidr == 0 ? 0 : KeyType.max << (KeyType.sizeof * 8 - cidr);
+    KeyType mask = cidr == 0 ? 0 : KeyType::max << (KeyType::size * 8 - cidr);
     self.ip = addr.ip4.val & mask;
     self.cidr = cidr;
 }
 
 fn void Cidr.from(&self, InetAddress *addr, uint cidr) @if(KeyType == uint128) {
     assert(addr.is_ipv6 == true);
-    KeyType mask = cidr == 0 ? 0 : KeyType.max << (KeyType.sizeof * 8 - cidr);
+    KeyType mask = cidr == 0 ? 0 : KeyType::max << (KeyType::size * 8 - cidr);
     self.ip = addr.ip6.val & mask;
     self.cidr = cidr;
 }
 
 <*
 @require STRIDE >= 3 && STRIDE <= 7
-@require KeyType.sizeof <= 16
-@require ValueType.sizeof <= 8 : `Too large ValueType, maybe use a pointer?`
+@require KeyType::size <= 16
+@require ValueType::size <= 8 : `Too large ValueType, maybe use a pointer?`
 *>
 module tbmlib <STRIDE, KeyType, ValueType>;
 import std::io;
@@ -220,7 +220,7 @@ struct TbmNode {
 
 int dummy <STRIDE, KeyType, ValueType> @if(assert_types());
 macro bool assert_types() <STRIDE, KeyType, ValueType> @local {
-    $assert TbmNode.sizeof >= ValueType.sizeof; 
+    $assert TbmNode::size >= ValueType::size;
     return false;
 }
 
@@ -243,7 +243,7 @@ fn bool TbmNode.empty_node(&self) {
 
 typedef TrivalAllocator (TbmAllocator) = uptr;
 fn void*? TrivalAllocator.alloc(&self, usz nodes_count) @dynamic {
-    return calloc(nodes_count * TbmNode.sizeof);
+    return calloc(nodes_count * TbmNode::size);
 }
 fn void TrivalAllocator.free(&self, void *ptr, usz node_count) @dynamic {
     (void)node_count;
@@ -252,7 +252,7 @@ fn void TrivalAllocator.free(&self, void *ptr, usz node_count) @dynamic {
 
 typedef TempTbmAllocator (TbmAllocator) = uptr;
 fn void*? TempTbmAllocator.alloc(&self, usz nodes_count) @dynamic {
-    return tcalloc(nodes_count * TbmNode.sizeof);
+    return tcalloc(nodes_count * TbmNode::size);
 }
 
 fn void TempTbmAllocator.free(&self, void *ptr, usz node_count) @dynamic {
@@ -281,12 +281,12 @@ fn void SlabAllocator.free(&self, void *ptr, usz node_count) @dynamic {
     self.slab.free(ptr, node_count);
 }
 
-const ROUTE_NUM = TbmNode.sizeof / ValueType.sizeof;
+const ROUTE_NUM = TbmNode::size / ValueType::size;
 
 struct TbmValueNode {
     ValueType[ROUTE_NUM] values;
     //make sure the TbmRouteNode size equals to TbmNode
-    char[TbmNode.sizeof % ValueType.sizoef] __pad @if(TbmNode.sizeof % ValueType.sizeof != 0);
+    char[TbmNode::size % ValueType::size] __pad @if(TbmNode::size % ValueType::size != 0);
 }
 
 struct TbmValueIter {
@@ -339,13 +339,13 @@ struct TbmMemoryStats (Printable) {
     usz total_memory;
 }
 
-fn usz? TbmMemoryStats.to_format(&self, Formatter *f) @dynamic {
+fn sz? TbmMemoryStats.to_format(&self, Formatter *f) @dynamic {
     return f.printf("tbm_nodes=%d total_memory=%d", self.tbm_nodes, self.total_memory);
 }
 
 macro StrideType @key_shift(KeyType #ip) {
     defer #ip <<= STRIDE;
-    return {(StrideTypeInner)((#ip & stride_mask($typeof(#ip), STRIDE)) >> ($typeof(#ip).sizeof * 8 - STRIDE))};
+    return {(StrideTypeInner)((#ip & stride_mask($typeof(#ip), STRIDE)) >> ($typeof(#ip)::size * 8 - STRIDE))};
 }
 
 fn usz count_inl_nodes(BitmapType internal) {
@@ -373,11 +373,11 @@ fn TbmNode*? TbmNode.insert_exl_node(&self, TbmAllocator alloc, StrideType strid
 
     TbmNode *new_node = alloc.alloc(tot_exl_count + tot_inl_count + 1)!;
     TbmNode *copy_start = (TbmNode *)self.next - tot_inl_count;
-    mem::copy(new_node, copy_start, (tot_inl_count + before_exl_count) * TbmNode.sizeof);
+    mem::copy(new_node, copy_start, (tot_inl_count + before_exl_count) * TbmNode::size);
 
     copy_start += tot_inl_count + before_exl_count;
     TbmNode *new_after = new_node + tot_inl_count + before_exl_count + 1;
-    mem::copy(new_after, copy_start, (tot_exl_count - before_exl_count) * TbmNode.sizeof);
+    mem::copy(new_after, copy_start, (tot_exl_count - before_exl_count) * TbmNode::size);
 
     self.external = @bitmap_set(self.external, stride.val);
     alloc.free((TbmValueNode*)self.next - tot_inl_count, tot_exl_count + tot_inl_count);
@@ -461,7 +461,7 @@ fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Cidr prefix, ValueType v)
         usz exl_nodes = self.count_exl_nodes();
         void *new_nodes = alloc.alloc(post_count + exl_nodes)!;
         void *new_exl = (TbmNode*)new_nodes + post_count;
-        mem::copy(new_exl, self.next, exl_nodes * TbmNode.sizeof);
+        mem::copy(new_exl, self.next, exl_nodes * TbmNode::size);
         self.insert_value(new_exl, pos, v);
         alloc.free((TbmValueNode*)self.next - prev_count, prev_count + exl_nodes);
         self.next = new_exl;
@@ -481,7 +481,7 @@ fn void? TbmNode.insert(&self, TbmAllocator alloc, Cidr prefix, ValueType v) {
 fn void? Tbm.insert(&self, Cidr prefix, ValueType v) {
     return self.root.insert(self.alloc, prefix, v);
 }
-const uint NODE_CACHE_SIZE = (KeyType.sizeof * 8) / STRIDE;
+const uint NODE_CACHE_SIZE = (KeyType::size * 8) / STRIDE;
 
 struct SearchCache {
     TbmNode *node;
@@ -531,12 +531,12 @@ fn void TbmNode.iterate(&self, Cidr* cidr, uint depth, Iterator f, void *aux) {
 
         //another way to do this is to plus one to `pos`, then we know
         //that pos + 1 >= (1<<len), so could check the bits by
-        //uint.sizeof * 8 - (pos+1).clz() - 1:
-        uint len = uint.sizeof * 8 - (pos+1).clz() - 1;
+        //uint::size * 8 - (pos+1).clz() - 1:
+        uint len = uint::size * 8 - (pos+1).clz() - 1;
         KeyType prefix = (KeyType)(pos - ((1u << len) - 1));
 
         Cidr curr_cidr = *cidr;
-        curr_cidr.ip |= prefix << (KeyType.sizeof * 8 - depth - len);
+        curr_cidr.ip |= prefix << (KeyType::size * 8 - depth - len);
         curr_cidr.cidr += (uint)len;
         f(&curr_cidr, self.get_value(pos), aux);
     };
@@ -544,7 +544,7 @@ fn void TbmNode.iterate(&self, Cidr* cidr, uint depth, Iterator f, void *aux) {
     @foreach_1bit(self.external; uint pos) {
         TbmNode *node = self.next_exl( { (StrideTypeInner) pos } );
         Cidr curr_cidr = *cidr;
-        curr_cidr.ip |= ((KeyType)pos) << (KeyType.sizeof * 8 - depth - STRIDE);
+        curr_cidr.ip |= ((KeyType)pos) << (KeyType::size * 8 - depth - STRIDE);
         curr_cidr.cidr += STRIDE;
         node.iterate(&curr_cidr, depth + STRIDE, f, aux);
     };
@@ -557,7 +557,7 @@ fn void Tbm.iterate(&self, Iterator f, void *aux) {
 
 fn TbmMemoryStats Tbm.memory_stats(&self) {
     usz tbm_nodes = self.root.count_memory_nodes();
-    return { .tbm_nodes = tbm_nodes, .total_memory = tbm_nodes * TbmNode.sizeof };
+    return { .tbm_nodes = tbm_nodes, .total_memory = tbm_nodes * TbmNode::size };
 }
 
 fn void TbmNode.remove_value_inplace(&self, uint pos) {
@@ -608,10 +608,10 @@ fn void? TbmNode.remove_exl_node(&self, TbmAllocator alloc, StrideType stride) {
     TbmNode *copy_start = (TbmNode *)self.next - tot_inl_count;
 
     if (new_node) {
-        mem::copy(new_node, copy_start, (tot_inl_count + before_exl_count) * TbmNode.sizeof);
+        mem::copy(new_node, copy_start, (tot_inl_count + before_exl_count) * TbmNode::size);
         copy_start += tot_inl_count + before_exl_count + 1;
         TbmNode *new_after = new_node + tot_inl_count + before_exl_count;
-        mem::copy(new_after, copy_start, (tot_exl_count - before_exl_count - 1) * TbmNode.sizeof);
+        mem::copy(new_after, copy_start, (tot_exl_count - before_exl_count - 1) * TbmNode::size);
     }
 
     self.external = @bitmap_clear(self.external, stride.val);
@@ -649,7 +649,7 @@ fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
             void *new_exl = null;
             if (new_nodes) {
                 new_exl = (TbmNode*)new_nodes + post_count;
-                mem::copy(new_exl, self.next, exl_nodes * TbmNode.sizeof);
+                mem::copy(new_exl, self.next, exl_nodes * TbmNode::size);
                 self.remove_value(new_exl, pos);
             }
 
