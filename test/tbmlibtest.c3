@@ -163,7 +163,7 @@ fn void test_bitmap_slab_cache_hit_ratio() @test {
 
 alias BitmapType3 = tbmlib::bitmap::BitmapType {3};
 fn void test_inl_check() @test {
-    InlStrideType{3} stride = {0b11};
+    InlStrideType{3} stride = {(StrideTypeInner)0b11};
     //map == 0b01000101
     BitmapType3 bm = 0b01000000;
 

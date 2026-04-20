@@ -44,9 +44,9 @@ module tbmlib::bitmap <STRIDE>;
 import tbmlib::common;
 import std::io;
 const typeid[*] BITMAP_TYPES @private = { char, ushort, uint, ulong, uint128 };
-typedef BitmapType = inline $typefrom(BITMAP_TYPES[STRIDE - 3]);
+typedef BitmapType @constinit = inline $typefrom(BITMAP_TYPES[STRIDE - 3]);
 alias stride_mask @private = tbmlib::common::stride_mask;
-typedef StrideTypeInner = inline char;
+alias StrideTypeInner = char;
 bitstruct StrideType : StrideTypeInner {
     StrideTypeInner val : 0 .. STRIDE - 1;
 }
