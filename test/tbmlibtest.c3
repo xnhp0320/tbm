@@ -696,7 +696,7 @@ fn void test_memory_stats() @test {
 
         TbmMemoryStats{3, uint, uint} stats = tbm.memory_stats();
         assert(stats.tbm_nodes == 5);
-        assert(stats.total_memory == 5 * TbmNode{3, uint, uint}.sizeof);
+        assert(stats.total_memory == 5 * TbmNode{3, uint, uint}::size);
     };
 }
 
