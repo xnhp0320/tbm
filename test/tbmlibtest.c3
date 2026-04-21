@@ -41,7 +41,7 @@ bool fib_large_slab_bench_ready;
 
 alias @bitmap_set6 = tbmlib::bitmap::@bitmap_set {6};
 
-fn void init_benchmarks() @init {
+fn void init_benchmarks() @init @if(env::BENCHMARKING) {
     set_benchmark_warmup_iterations(1);
     set_benchmark_func_iterations("tbmlibtest::benchmark_tbm_ipv4_lookup", 1);
     set_benchmark_func_iterations("tbmlibtest::benchmark_bitmap_slab_large_fib_load", 1);
