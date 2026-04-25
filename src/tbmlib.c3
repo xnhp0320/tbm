@@ -447,6 +447,7 @@ fn void TbmNode.insert_value_inplace(&self, usz pos, ValueType v) {
     }
 
     *iter.get() = v;
+    self.internal = @bitmap_set(self.internal, (uint)pos);
 }
 
 fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Cidr prefix, ValueType v) {
@@ -465,8 +466,8 @@ fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Cidr prefix, ValueType v)
         self.insert_value(new_exl, pos, v);
         alloc.free((TbmValueNode*)self.next - prev_count, prev_count + exl_nodes);
         self.next = new_exl;
+        self.internal = internal;
     }
-    self.internal = internal;
 }
 <* @require tbmlib::common::@cidr_valid(prefix)
 *>
@@ -573,6 +574,7 @@ fn void TbmNode.remove_value_inplace(&self, uint pos) {
         *_v = *iter.get();
         i ++;
     }
+    self.internal = @bitmap_clear(self.internal, pos);
 }
 
 fn void TbmNode.remove_value(&self, TbmValueNode *new, uint pos)
@@ -641,7 +643,6 @@ fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
         usz post_count = count_inl_nodes(internal);
         if (prev_count == post_count) {
             self.remove_value_inplace(pos);
-            self.internal = internal;
         } else {
             void *ptr = (TbmValueNode*)self.next - prev_count;
             usz exl_nodes = self.count_exl_nodes();
