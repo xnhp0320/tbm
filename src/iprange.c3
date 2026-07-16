@@ -18,8 +18,8 @@ alias Cidr @private = cidr::Cidr {KeyType};
 fn IpRange iprange_from_cidr(Cidr cidr) {
     IpRange self;
     self.start = cidr.ip;
-    if (cidr.cidr < $typeof(cidr.ip)::size * 8) {
-        self.end = cidr.ip | (((KeyType)1 << ($typeof(cidr.ip)::size * 8 - cidr.cidr)) - 1);
+    if (cidr.cidr < $Typeof(cidr.ip)::size * 8) {
+        self.end = cidr.ip | (((KeyType)1 << ($Typeof(cidr.ip)::size * 8 - cidr.cidr)) - 1);
     } else {
         self.end = cidr.ip;
     }
