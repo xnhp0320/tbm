@@ -37,9 +37,9 @@ fn void BitmapSlab.init(&self, usz total_nodes) {
         return;
     }
 
-    self.storage = mem::new_array(NodeType, total_nodes);
+    self.storage = mem::new_array(NodeType, (sz)total_nodes);
     usz bitmap_words = (total_nodes + BITS_PER_WORD - 1) / BITS_PER_WORD;
-    self.bitmap = mem::alloc_array(ulong, bitmap_words);
+    self.bitmap = mem::alloc_array(ulong, (sz)bitmap_words);
     
     foreach (&bm : self.bitmap) {
         *bm = ulong::max;
@@ -105,7 +105,7 @@ fn void BitmapSlab.set_range(&self, usz offset, usz node_count, bool mark_free) 
 fn void BitmapSlab.clear_range(&self, usz offset, usz node_count) {
     char *bytes = (char*)(&self.storage[offset]);
     usz total_bytes = node_count * NodeType::size;
-    mem::clear(bytes, total_bytes);
+    mem::clear(bytes, (sz)total_bytes);
 }
 
 fn void BitmapSlab.cache_remove(&self, usz idx) {
