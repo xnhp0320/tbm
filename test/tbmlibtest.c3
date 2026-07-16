@@ -40,6 +40,7 @@ bool fib_bench_ready;
 bool fib_large_slab_bench_ready;
 
 alias @bitmap_set6 = tbmlib::bitmap::@bitmap_set {6};
+alias @bitmap_set7 = tbmlib::bitmap::@bitmap_set {7};
 
 fn void init_benchmarks() @init @if(env::BENCHMARKING) {
     set_benchmark_warmup_iterations(1);
@@ -54,8 +55,8 @@ fn void test_bitmap6() @test {
 
 fn void test_bitmap7() @test {
     BitmapType7 v;
-    assert(@bitmap_set{7}(v, 1) == 2);
-    assert(@bitmap_set{7}(v, 0) == 1);
+    assert(@bitmap_set7(v, 1) == 2);
+    assert(@bitmap_set7(v, 0) == 1);
 }
 
 fn void test_bitmap_slab_alloc_free() @test {
