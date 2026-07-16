@@ -37,122 +37,6 @@ macro @foreach_1bit(bm; @body(pos)) {
     }
 }
 
-<*
-@require STRIDE >= 3 && STRIDE <= 7
-*>
-module tbmlib::bitmap <STRIDE>;
-import tbmlib::common;
-import std::io;
-const typeid[*] BITMAP_TYPES @private = { char, ushort, uint, ulong, uint128 };
-typedef BitmapType @constinit = inline $Typefrom(BITMAP_TYPES[STRIDE - 3]);
-alias stride_mask @private = tbmlib::common::stride_mask;
-alias StrideTypeInner = char;
-bitstruct StrideType : StrideTypeInner {
-    StrideTypeInner val : 0 .. STRIDE - 1;
-}
-
-bitstruct InlStrideType : StrideTypeInner {
-    StrideTypeInner val : 0 .. STRIDE - 2;
-}
-
-const BITMAP_WIDTH = (1 << STRIDE);
-const INL_STRIDE = STRIDE - 1;
-
-<* @require #val < BITMAP_WIDTH
-*>
-macro @bitmap_set(BitmapType #bitmap, uint #val) {
-    return #bitmap | ((BitmapType)1 << #val);
-}
-
-macro @bitmap_check(BitmapType #bitmap, uint #pos) {
-    return (#bitmap & ((BitmapType)1 << #pos)) != (BitmapType)0;
-}
-
-macro @bitmap_clear(BitmapType #bitmap, uint #pos) {
-    return #bitmap & ~((BitmapType)1 << #pos);
-}
-
-
-// 0/1 -> should be the position 1,
-// 00/2 -> should be the position 3.
-// 111/3 -> should be the position 14.
-// this is for STRIDE == 4.
-// The return value should in [0, (1 << STRIDE) - 2].
-
-<* @require #prefix < (1 << (STRIDE - 1))
-   @require #len >= 0 && #len < STRIDE
-   @ensure return >= 0 && return <= (1 << STRIDE) - 2
-*>
-macro @inl_bitpos(uint #prefix, uint #len) {
-    return ((1u << #len) - 1) + #prefix;
-}
-
-const BitmapType[1<<(STRIDE-1)] INL_CHECK_MAP = gen_inl_check_map();
-
-macro gen_inl_check_map() {
-    BitmapType[1<<(STRIDE-1)] $map;
-
-    $for var $prefix = 0u; $prefix < (1 << (STRIDE - 1)); $prefix++:
-        BitmapType $check_bitmap;
-        var $p = $prefix;
-        $for var $len = (int)(STRIDE - 1); $len >= 0; $len --:
-            var $pos = @inl_bitpos($p, $len);
-            $check_bitmap = @bitmap_set($check_bitmap, $pos);
-            $p >>= 1;
-        $endfor;
-        $map[$prefix] = $check_bitmap;
-    $endfor;
-    return $map;
-}
-
-fn void? print_inl_check_map(OutStream out) @maydiscard {
-    var $stride = @sprintf("0%s", STRIDE - 1);
-    var $bitmap_width = @sprintf("0%s", BITMAP_WIDTH);
-    foreach(i, v : INL_CHECK_MAP) {
-        io::fprintf(out, "0b%" +++ $stride +++ "b ---> 0b%" +++ $bitmap_width +++"b\n",
-                    i, v)!;
-    }
-}
-
-<* @require offset < BITMAP_WIDTH
-*>
-macro BitmapType.count_bits(self, usz offset) {
-    return (self & (((BitmapType)1 << offset) - 1)).popcount();
-}
-
-fn usz? BitmapType.check_inl_bitmap(self, InlStrideType prefix) {
-    BitmapType check = INL_CHECK_MAP[prefix.val] & self;
-    if (check != 0) {
-        return BITMAP_WIDTH - 1 - (usz)check.clz();
-    }
-    return tbmlib::common::MISSING~;
-}
-
-fn usz? BitmapType.check_exl_bitmap(self, StrideType prefix) {
-    BitmapType check = self & ((BitmapType)1 << prefix.val);
-    if (check != 0) {
-        return (usz)self.count_bits(prefix.val);
-    }
-    return tbmlib::common::MISSING~;
-}
-
-macro @shift_cidr(#cidr) {
-    #cidr.ip <<= STRIDE;
-    #cidr.cidr -= STRIDE;
-}
-
-<* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
-   @require $Typeof(#cidr)::kind == TypeKind.POINTER
-   @require #cidr.cidr >= STRIDE
-*>
-macro StrideType @cidr_shift(#cidr) {
-    defer @shift_cidr(#cidr);
-    return {(StrideTypeInner) ((#cidr.ip & stride_mask($Typeof(#cidr.ip), STRIDE)) >> ($Typeof(#cidr.ip)::size * 8 - STRIDE))};
-}
-
-fn void InlStrideType.from(&self, StrideType stride) {
-    *self = { stride.val >> 1 };
-}
 module tbmlib::cidr <KeyType>;
 import std::io;
 import std::net;
@@ -189,25 +73,121 @@ fn void Cidr.from(&self, InetAddress *addr, uint cidr) @if(KeyType == uint128) {
 module tbmlib <STRIDE, KeyType, ValueType>;
 import std::io;
 import tbmlib::common;
-import tbmlib::bitmap;
 import tbmlib::bitmap_slab;
 
 alias @remove_wildcard @private = tbmlib::common::@remove_wildcard;
 alias stride_mask @private = tbmlib::common::stride_mask;
-
-alias BITMAP_WIDTH @private = tbmlib::bitmap::BITMAP_WIDTH {STRIDE};
-alias INL_STRIDE @private = tbmlib::bitmap::INL_STRIDE {STRIDE};
-alias INL_CHECK_MAP @private = tbmlib::bitmap::INL_CHECK_MAP {STRIDE};
-alias @bitmap_set @private = tbmlib::bitmap::@bitmap_set {STRIDE};
-alias @bitmap_check @private = tbmlib::bitmap::@bitmap_check {STRIDE};
-alias @bitmap_clear @private = tbmlib::bitmap::@bitmap_clear {STRIDE};
-alias @inl_bitpos @private = tbmlib::bitmap::@inl_bitpos {STRIDE};
-alias BitmapType @private = tbmlib::bitmap::BitmapType {STRIDE};
-alias StrideType @private = tbmlib::bitmap::StrideType {STRIDE};
-alias InlStrideType @private = tbmlib::bitmap::InlStrideType {STRIDE};
-alias StrideTypeInner @private = tbmlib::bitmap::StrideTypeInner {STRIDE};
 alias Cidr @private = tbmlib::cidr::Cidr {KeyType};
-alias @cidr_shift @private = tbmlib::bitmap::@cidr_shift {STRIDE};
+
+// --- stride bitmap helpers (internal to tbmlib) ---
+const typeid[*] BITMAP_TYPES @private = { char, ushort, uint, ulong, uint128 };
+typedef BitmapType @constinit = inline $Typefrom(BITMAP_TYPES[STRIDE - 3]);
+alias StrideTypeInner = char;
+bitstruct StrideType : StrideTypeInner {
+    StrideTypeInner val : 0 .. STRIDE - 1;
+}
+
+bitstruct InlStrideType : StrideTypeInner {
+    StrideTypeInner val : 0 .. STRIDE - 2;
+}
+
+const BITMAP_WIDTH = (1 << STRIDE);
+const INL_STRIDE = STRIDE - 1;
+
+<* @require #val < BITMAP_WIDTH
+*>
+macro @bitmap_set(BitmapType #bitmap, uint #val) {
+    return #bitmap | ((BitmapType)1 << #val);
+}
+
+macro @bitmap_check(BitmapType #bitmap, uint #pos) {
+    return (#bitmap & ((BitmapType)1 << #pos)) != (BitmapType)0;
+}
+
+macro @bitmap_clear(BitmapType #bitmap, uint #pos) {
+    return #bitmap & ~((BitmapType)1 << #pos);
+}
+
+// 0/1 -> should be the position 1,
+// 00/2 -> should be the position 3.
+// 111/3 -> should be the position 14.
+// this is for STRIDE == 4.
+// The return value should in [0, (1 << STRIDE) - 2].
+
+<* @require #prefix < (1 << (STRIDE - 1))
+   @require #len >= 0 && #len < STRIDE
+   @ensure return >= 0 && return <= (1 << STRIDE) - 2
+*>
+macro @inl_bitpos(uint #prefix, uint #len) {
+    return ((1u << #len) - 1) + #prefix;
+}
+
+const BitmapType[1<<(STRIDE-1)] INL_CHECK_MAP @private = gen_inl_check_map();
+
+macro gen_inl_check_map() @private {
+    BitmapType[1<<(STRIDE-1)] $map;
+
+    $for var $prefix = 0u; $prefix < (1 << (STRIDE - 1)); $prefix++:
+        BitmapType $check_bitmap;
+        var $p = $prefix;
+        $for var $len = (int)(STRIDE - 1); $len >= 0; $len --:
+            var $pos = @inl_bitpos($p, $len);
+            $check_bitmap = @bitmap_set($check_bitmap, $pos);
+            $p >>= 1;
+        $endfor;
+        $map[$prefix] = $check_bitmap;
+    $endfor;
+    return $map;
+}
+
+fn void? print_inl_check_map(OutStream out) @maydiscard @private {
+    var $stride = @sprintf("0%s", STRIDE - 1);
+    var $bitmap_width = @sprintf("0%s", BITMAP_WIDTH);
+    foreach(i, v : INL_CHECK_MAP) {
+        io::fprintf(out, "0b%" +++ $stride +++ "b ---> 0b%" +++ $bitmap_width +++"b\n",
+                    i, v)!;
+    }
+}
+
+<* @require offset < BITMAP_WIDTH
+*>
+macro BitmapType.count_bits(self, usz offset) {
+    return (self & (((BitmapType)1 << offset) - 1)).popcount();
+}
+
+fn usz? BitmapType.check_inl_bitmap(self, InlStrideType prefix) {
+    BitmapType check = INL_CHECK_MAP[prefix.val] & self;
+    if (check != 0) {
+        return BITMAP_WIDTH - 1 - (usz)check.clz();
+    }
+    return tbmlib::common::MISSING~;
+}
+
+fn usz? BitmapType.check_exl_bitmap(self, StrideType prefix) {
+    BitmapType check = self & ((BitmapType)1 << prefix.val);
+    if (check != 0) {
+        return (usz)self.count_bits(prefix.val);
+    }
+    return tbmlib::common::MISSING~;
+}
+
+macro @shift_cidr(#cidr) @private {
+    #cidr.ip <<= STRIDE;
+    #cidr.cidr -= STRIDE;
+}
+
+<* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
+   @require $Typeof(#cidr)::kind == TypeKind.POINTER
+   @require #cidr.cidr >= STRIDE
+*>
+macro StrideType @cidr_shift(#cidr) {
+    defer @shift_cidr(#cidr);
+    return {(StrideTypeInner) ((#cidr.ip & stride_mask($Typeof(#cidr.ip), STRIDE)) >> ($Typeof(#cidr.ip)::size * 8 - STRIDE))};
+}
+
+fn void InlStrideType.from(&self, StrideType stride) {
+    *self = { stride.val >> 1 };
+}
 
 //Tree bitmap Node def
 struct TbmNode {
