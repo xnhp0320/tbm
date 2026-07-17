@@ -5,10 +5,12 @@ import tbmlib::common;
 import std::io;
 
 alias IpRangeList = iprange::IpRangeList{uint};
+alias IpRange = iprange::IpRange{uint};
 alias SegList = iprange::SegList{uint}; 
 alias Seg = iprange::Seg{uint}; 
 alias Cidr = cidr::Cidr{uint};
 alias IpRangeList6 = iprange::IpRangeList{uint128};
+alias IpRange6 = iprange::IpRange{uint128};
 alias SegList6 = iprange::SegList{uint128};
 alias Seg6 = iprange::Seg{uint128};
 alias Cidr6 = cidr::Cidr{uint128};
@@ -26,6 +28,48 @@ fn void test_build_seg_0() @test {
     //foreach (s: sg_list) {
     //    io::printf("%s\n", s);
     //}
+}
+
+fn void test_build_segs_empty() @test {
+    IpRangeList rl;
+    rl.init(mem);
+    defer rl.free();
+
+    SegList sg_list = rl.build_segs()!!;
+    defer sg_list.free();
+    assert(sg_list.len() == 0);
+}
+
+fn void test_build_segs_preserves_original_idx() @test {
+    IpRangeList rl;
+    rl.init(mem);
+    defer rl.free();
+
+    // Push in reverse start order so a mutating sort would scramble indices.
+    Cidr c = {0xe000_0000, 31};
+    rl.push(iprange::iprange_from_cidr{uint}(c));
+    c = {0xc000_0000, 30};
+    rl.push(iprange::iprange_from_cidr{uint}(c));
+
+    IpRange first = rl[0];
+    IpRange second = rl[1];
+
+    SegList sg_list = rl.build_segs()!!;
+    defer sg_list.free();
+
+    // Input list must not be reordered.
+    assert(rl[0].start == first.start && rl[0].end == first.end);
+    assert(rl[1].start == second.start && rl[1].end == second.end);
+
+    assert(sg_list[0] == (Seg){ .r = {0xc000_0000, 0xc000_0003}, .idx = 1});
+    assert(sg_list[1] == (Seg){ .r = {0xe000_0000, 0xe000_0001}, .idx = 0});
+}
+
+fn void test_cidr_from_iprange_rejects_non_cidr() @test {
+    assert(@catch(iprange::cidr_from_iprange{uint}({ .start = 0, .end = 2 })) == iprange::INVALID_RANGE);
+    Cidr c = iprange::cidr_from_iprange{uint}({ .start = 0xc000_0000, .end = 0xc000_0003 })!!;
+    assert(c.ip == 0xc000_0000);
+    assert(c.cidr == 30);
 }
 
 fn void test_build_seg_1() @test {

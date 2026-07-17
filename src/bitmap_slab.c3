@@ -31,15 +31,15 @@ struct BitmapSlab {
     FreeSegment[SEGMENT_CACHE_SIZE] segment_cache;
 }
 
-fn void BitmapSlab.init(&self, usz total_nodes) {
+fn void? BitmapSlab.init(&self, usz total_nodes) {
     self.release();
     if (total_nodes == 0) {
         return;
     }
 
-    self.storage = mem::new_array(NodeType, (sz)total_nodes);
+    self.storage = alloc::new_array_try(mem, NodeType, (sz)total_nodes)!;
     usz bitmap_words = (total_nodes + BITS_PER_WORD - 1) / BITS_PER_WORD;
-    self.bitmap = mem::alloc_array(ulong, (sz)bitmap_words);
+    self.bitmap = alloc::alloc_array_try(mem, ulong, (sz)bitmap_words)!;
     
     foreach (&bm : self.bitmap) {
         *bm = ulong::max;
