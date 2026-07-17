@@ -21,3 +21,13 @@ Longest-prefix-match trie (Tree Bitmap) implemented in C3, with an optional C he
 - `FibTbm` / `FibCidr` layouts are compiler-generated and may change; treat them as opaque and only use the exported functions.
 - Zero a `FibTbm`, then `tbm_init`. Re-init only after `tbm_free`.
 - `tbm_init` / `tbm_insert` / `tbm_remove` / `tbm_lookup` return a `c3fault_t` (`NULL` = success). Use `tbm_fault_name` for a short fault name.
+
+## Benchmarks
+
+Benchmarks live in `test/tbmlibtest.c3` (`@benchmark`). Project `c3c benchmark` alone does not pick up `test-sources`, so add the test file explicitly:
+
+```bash
+c3c benchmark -O3 --sources test/tbmlibtest.c3
+```
+
+Run from the repo root so `ipv4_fib.txt` / `ipv4_fib_large.txt` resolve. Optional: `--benchmark-csv-report` for CSV output.

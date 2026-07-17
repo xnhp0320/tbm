@@ -1080,7 +1080,7 @@ fn void benchmark_tbm_ipv4_lookup() @benchmark {
 
     const uint ROUNDS = 16;
     ulong checksum = 0;
-    usz total_lookups = fib_bench_ips.len() * ROUNDS;
+    usz total_lookups = (usz)fib_bench_ips.len() * ROUNDS;
     Clock started = clock::now();
     @start_benchmark();
     uint round = 0;
@@ -1101,6 +1101,14 @@ fn void benchmark_tbm_ipv4_lookup() @benchmark {
 }
 
 fn void benchmark_bitmap_slab_large_fib_load() @benchmark {
+    // Rebuild every iteration so warmup does not skip the timed load.
+    if (fib_large_slab_bench_ready) {
+        fib_large_slab_tbm.free_mem();
+        fib_large_slab_alloc.release();
+        fib_large_slab_bench_ready = false;
+        fib_large_slab_rules = 0;
+    }
+
     Clock started = clock::now();
     @start_benchmark();
     ensure_ipv4_large_slab_benchmark_data();
