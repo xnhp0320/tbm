@@ -2,6 +2,7 @@ module tbm;
 
 import tbmlib;
 import tbmlib::cidr;
+import tbmlib::common;
 import std::io;
 import std::io::file;
 import std::net;
@@ -28,6 +29,9 @@ fn usz? load_ipv4_fib_tbm(Allocator alloc, String filename, Tbm *tbm) <Tbm> {
             break;
         }
         idx++;
+    }
+    if (idx % 2 != 0) {
+        return common::MALFORMED_INPUT~;
     }
     return idx / 2;
 }

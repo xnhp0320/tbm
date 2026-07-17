@@ -5,6 +5,8 @@ import std::collections::list;
 import tbmlib::cidr;
 import tbmlib::common;
 
+faultdef INVALID_RANGE;
+
 typedef IpRange = inline range::Range {KeyType};
 
 fn sz? IpRange.to_format(&self, Formatter *f) @dynamic {
@@ -27,8 +29,16 @@ fn IpRange iprange_from_cidr(Cidr cidr) {
     return self;
 }
 
-fn Cidr cidr_from_iprange(IpRange r) {
-    return { .ip = r.start, .cidr = (uint)(KeyType::size * 8 - (r.end - r.start).popcount()) };
+fn Cidr? cidr_from_iprange(IpRange r) {
+    if (r.end < r.start) {
+        return INVALID_RANGE~;
+    }
+    KeyType mask = r.end - r.start;
+    // Inclusive CIDR range <=> mask is 0b1..1 and start is aligned to that mask.
+    if ((mask & (mask + 1)) != 0 || (r.start & mask) != 0) {
+        return INVALID_RANGE~;
+    }
+    return { .ip = r.start, .cidr = (uint)(KeyType::size * 8 - mask.popcount()) };
 }
 
 alias IpRangeList = List {IpRange};
@@ -63,26 +73,39 @@ fn void? load_ipv4_rangelist(Allocator alloc, String filename, IpRangeList *rl) 
         }
         idx ++;
     }
+    if (idx % 2 != 0) {
+        return common::MALFORMED_INPUT~;
+    }
 }
 
+struct IndexedRange {
+    IpRange r;
+    uint orig_idx;
+}
+
+fn bool IndexedRange.less(&self, IndexedRange other) {
+    return self.r.start < other.r.start;
+}
+
+alias IndexedRangeList = List {IndexedRange};
 alias IdxList = List {uint};
 
-fn uint pick_winner(IdxList *idx_list, IpRangeList *rl) {
-    uint prefixlen = cidr_from_iprange(rl.[idx_list.[0]]).cidr;
-    uint winner = idx_list.[0];
-    foreach (idx : idx_list.array_view()[1 .. ]) {
-        Cidr c = cidr_from_iprange(rl.[idx]);
+fn uint? pick_winner(IdxList *idx_list, IndexedRangeList *items) {
+    uint winner_pos = idx_list.[0];
+    uint prefixlen = cidr_from_iprange(items.[winner_pos].r)!.cidr;
+    foreach (pos : idx_list.array_view()[1 .. ]) {
+        Cidr c = cidr_from_iprange(items.[pos].r)!;
         if (c.cidr > prefixlen) {
-            winner = idx;
+            winner_pos = pos;
             prefixlen = c.cidr;
         }
     }
-    return winner;
+    return items.[winner_pos].orig_idx;
 }
 
 struct Seg (Printable) {
     IpRange r;
-    uint idx; //points to the original IpRangeList.
+    uint idx; // index into the original (pre-sort) IpRangeList
 }
 
 fn bool Seg.equals(self, Seg other) @operator(==) {
@@ -131,6 +154,21 @@ fn uint? SegList.do_lpm(&self, KeyType ip) {
 }
 
 fn SegList? IpRangeList.build_segs(&self) {
+    SegList sg_list;
+    sg_list.init(mem);
+    if (self.len() == 0) {
+        return sg_list;
+    }
+
+    IndexedRangeList items;
+    items.init(mem);
+    defer items.free();
+    uint i = 0;
+    foreach (r : self) {
+        items.push({ .r = r, .orig_idx = i });
+        i++;
+    }
+    quicksort(&items);
 
     List{uint} in_heap;
     in_heap.init(mem);
@@ -139,24 +177,20 @@ fn SegList? IpRangeList.build_segs(&self) {
     Heap h;
     h.init(mem);
     defer h.free();
-    quicksort(self);
 
-    h.push({self.[0].end, 0});
-    KeyType start = self.[0].start;
+    h.push({items.[0].r.end, 0});
+    KeyType start = items.[0].r.start;
     in_heap.push(0);
 
-    SegList sg_list;
-    sg_list.init(mem);
-
     uint idx = 1;
-    while OUTER: (idx < self.len()) {
-        KeyType curr_start = self.[idx].start;
+    while OUTER: (idx < items.len()) {
+        KeyType curr_start = items.[idx].r.start;
 
         while (start <= curr_start) {
             if (curr_start == start) {
                 //do not generate segs.
                 in_heap.push(idx);
-                h.push({self.[idx].end, idx});
+                h.push({items.[idx].r.end, idx});
                 idx++;
                 continue OUTER;
             }
@@ -164,7 +198,7 @@ fn SegList? IpRangeList.build_segs(&self) {
             if (h.len() == 0) {
                 start = curr_start;
                 in_heap.push(idx);
-                h.push({self.[idx].end, idx});
+                h.push({items.[idx].r.end, idx});
                 idx++;
                 continue OUTER;
             }
@@ -173,18 +207,18 @@ fn SegList? IpRangeList.build_segs(&self) {
             HeapItem top = h.first()!;
             if (curr_start <= top.end) {
                 //[start, curr_start], [curr_start + 1, ..]
-                uint winner = pick_winner(&in_heap, self);
+                uint winner = pick_winner(&in_heap, &items)!;
                 sg_list.push({.r = {start, curr_start - 1}, .idx = winner });
                 start = curr_start;
                 in_heap.push(idx);
-                h.push({self.[idx].end, idx});
+                h.push({items.[idx].r.end, idx});
                 idx ++;
                 continue OUTER;
             } else {
                 while (h.len() > 0 && curr_start > h.first()!.end) {
                     top = h.first()!;
                     if (top.end >= start) {
-                        uint winner = pick_winner(&in_heap, self);
+                        uint winner = pick_winner(&in_heap, &items)!;
                         sg_list.push({.r = {start, top.end}, .idx = winner });
                         start = top.end + 1;
                     }
@@ -196,12 +230,12 @@ fn SegList? IpRangeList.build_segs(&self) {
     }
 
     //start should be the last range's start
-    assert (start == self.array_view()[^1].start);
+    assert (start == items.array_view()[^1].r.start);
     HeapItem top;
     while (h.len() > 0) {
         top = h.first()!;
         if (top.end >= start) {
-            uint winner = pick_winner(&in_heap, self);
+            uint winner = pick_winner(&in_heap, &items)!;
             sg_list.push({.r = {start, top.end}, .idx = winner });
             start = top.end + 1;
         }

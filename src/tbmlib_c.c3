@@ -1,20 +1,31 @@
 module tbmlib_c @cname("tbm");
 import tbmlib::cidr;
 import tbmlib;
+import tbmlib::common;
 
 const uint FIB_TBM_STRIDE = 5;
 alias FibCidr @export("FibCidr") = cidr::Cidr {uint};
 alias FibTbm @export("FibTbm") = Tbm {FIB_TBM_STRIDE, uint, uint};
 
-fn void tbm_init(FibTbm *self, usz nodes_cnt) @export("tbm_init") {
-    self.init(nodes_cnt);
+<*
+  Initialize a zeroed FibTbm with an owned slab allocator.
+  On failure the Tbm is left unchanged (still zeroed / without alloc).
+*>
+fn void? tbm_init(FibTbm *self, usz nodes_cnt) @export("tbm_init") {
+    return self.init(nodes_cnt);
 }
 
 fn void? tbm_insert(FibTbm *self, FibCidr prefix, uint v) @export("tbm_insert") {
+    if (!tbmlib::common::@cidr_valid(prefix)) {
+        return common::INVALID_PREFIX~;
+    }
     return self.insert(prefix, v);
 }
 
 fn void? tbm_remove(FibTbm *self, FibCidr prefix) @export("tbm_remove") {
+    if (!tbmlib::common::@cidr_valid(prefix)) {
+        return common::INVALID_PREFIX~;
+    }
     return self.remove(prefix);
 }
 
@@ -29,4 +40,8 @@ fn void tbm_iterate(FibTbm *self, IteratorFunc f, void *aux) @export("tbm_iterat
 
 fn uint? tbm_lookup(FibTbm *self, uint v) @export("tbm_lookup") {
     return self.lookup(v);
+}
+
+fn ZString tbm_fault_name(fault f) @export("tbm_fault_name") {
+    return f.short_name().zstr_tcopy();
 }

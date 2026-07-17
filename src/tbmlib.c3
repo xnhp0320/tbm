@@ -1,14 +1,18 @@
 module tbmlib::common;
-faultdef MISSING, VALUE_NOT_FOUND, PREFIX_NOT_EXIST;
+faultdef MISSING, VALUE_NOT_FOUND, PREFIX_NOT_EXIST, INVALID_PREFIX, MALFORMED_INPUT;
 
 <* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
 *>
 macro bool @cidr_valid(#cidr) {
+    uint max_bits = $Typeof(#cidr.ip)::size * 8;
+    if (#cidr.cidr > max_bits) {
+        return false;
+    }
     if (#cidr.cidr == 0) {
         return #cidr.ip == 0;
     }
 
-    $Typeof(#cidr.ip) mask = $Typeof(#cidr.ip)::max << ($Typeof(#cidr.ip)::size * 8 - #cidr.cidr);
+    $Typeof(#cidr.ip) mask = $Typeof(#cidr.ip)::max << (max_bits - #cidr.cidr);
     return #cidr.ip & mask == #cidr.ip;
 }
 
@@ -53,6 +57,7 @@ fn sz? Cidr.to_format(&self, Formatter *f) @dynamic {
 
 fn void Cidr.from(&self, InetAddress *addr, uint cidr) @if(KeyType == uint) {
     assert(addr.is_ipv6 == false);
+    assert(cidr <= KeyType::size * 8);
     KeyType mask = cidr == 0 ? 0 : KeyType::max << (KeyType::size * 8 - cidr);
     self.ip = addr.ip4.val & mask;
     self.cidr = cidr;
@@ -60,6 +65,7 @@ fn void Cidr.from(&self, InetAddress *addr, uint cidr) @if(KeyType == uint) {
 
 fn void Cidr.from(&self, InetAddress *addr, uint cidr) @if(KeyType == uint128) {
     assert(addr.is_ipv6 == true);
+    assert(cidr <= KeyType::size * 8);
     KeyType mask = cidr == 0 ? 0 : KeyType::max << (KeyType::size * 8 - cidr);
     self.ip = addr.ip6.val & mask;
     self.cidr = cidr;
@@ -245,8 +251,8 @@ struct SlabAllocator (TbmAllocator) {
     TbmBitmapSlab slab;
 }
 
-fn void SlabAllocator.init(&self, usz total_nodes) {
-    self.slab.init(total_nodes);
+fn void? SlabAllocator.init(&self, usz total_nodes) {
+    return self.slab.init(total_nodes);
 }
 
 fn void SlabAllocator.release(&self) {
@@ -431,10 +437,14 @@ fn void TbmNode.insert_value_inplace(&self, usz pos, ValueType v) {
 }
 
 fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Cidr prefix, ValueType v) {
-    usz prev_count = self.count_inl_nodes();
-    BitmapType internal = self.internal;
     uint pos = @inl_bitpos(@remove_wildcard(prefix), prefix.cidr);
-    internal = @bitmap_set(internal, pos);
+    if (@bitmap_check(self.internal, pos)) {
+        *self.get_value(pos) = v;
+        return;
+    }
+
+    usz prev_count = self.count_inl_nodes();
+    BitmapType internal = @bitmap_set(self.internal, pos);
     usz post_count = (usz)(internal.popcount() + ROUTE_NUM) / ROUTE_NUM;
     if (post_count == prev_count) {
         self.insert_value_inplace(pos, v);
@@ -646,13 +656,19 @@ fn void? Tbm.remove(&self, Cidr prefix) {
     self.root.remove(self.alloc, prefix)!;
 }
 
-fn void Tbm.init(&self, usz nodes_cnt) {
-    SlabAllocator *slab = mem::new(SlabAllocator);
-    slab.init(nodes_cnt);
+fn void? Tbm.init(&self, usz nodes_cnt) {
+    // Re-init requires free() first so the previous owned slab is not leaked.
+    assert(self.alloc == null);
+    self.root = {};
+    SlabAllocator *slab = alloc::new_try(mem, SlabAllocator)!;
+    slab.init(nodes_cnt)!;
     self.alloc = slab;
 }
 
 fn void Tbm.init_mem(&self, TbmAllocator alloc) {
+    // Re-init requires free_mem()/free() first.
+    assert(self.alloc == null);
+    self.root = {};
     self.alloc = alloc;
 }
 
@@ -671,10 +687,14 @@ fn void TbmNode.free(&self, TbmAllocator alloc) {
 fn void Tbm.free(&self) {
     self.root.free(self.alloc);
     SlabAllocator *slab = (SlabAllocator*)self.alloc;
+    slab.release();
     free(slab);
     self.alloc = null;
+    self.root = {};
 }
 
 fn void Tbm.free_mem(&self) {
     self.root.free(self.alloc);
+    self.root = {};
+    self.alloc = null;
 }

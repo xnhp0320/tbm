@@ -60,7 +60,7 @@ fn void test_bitmap7() @test {
 
 fn void test_bitmap_slab_alloc_free() @test {
     UintBitmapSlab slab;
-    slab.init(32);
+    slab.init(32)!!;
     defer slab.release();
 
     uint *first = slab.alloc(5)!!;
@@ -107,7 +107,7 @@ fn void test_bitmap_slab_alloc_free() @test {
 
 fn void test_bitmap_slab_merge_free_segments() @test {
     UintBitmapSlab slab;
-    slab.init(32);
+    slab.init(32)!!;
     defer slab.release();
 
     uint *a = slab.alloc(4)!!;
@@ -127,7 +127,7 @@ fn void test_bitmap_slab_merge_free_segments() @test {
 
 fn void test_bitmap_slab_bitmap_scan_fallback() @test {
     UintBitmapSlab slab;
-    slab.init(20);
+    slab.init(20)!!;
     defer slab.release();
 
     slab.cache_entries = 0;
@@ -145,7 +145,7 @@ fn void test_bitmap_slab_bitmap_scan_fallback() @test {
 
 fn void test_bitmap_slab_cache_hit_ratio() @test {
     UintBitmapSlab slab;
-    slab.init(16);
+    slab.init(16)!!;
     defer slab.release();
 
     assert(slab.stats.cache_hit_ratio() == 0.0);
@@ -238,6 +238,26 @@ fn void test_cidr_print() @test {
         io::fprintf(&out, "%s", cidr)!!;
         assert (out.str_view() == "0x00000000/3");
     };
+}
+
+fn void test_cidr_valid_bounds() @test {
+    Cidr{uint} c = { .ip = 0, .cidr = 33 };
+    assert(!tbmlib::common::@cidr_valid(c));
+
+    c = { .ip = 0, .cidr = 32 };
+    assert(tbmlib::common::@cidr_valid(c));
+
+    c = { .ip = 0xc000_0000, .cidr = 30 };
+    assert(tbmlib::common::@cidr_valid(c));
+
+    c = { .ip = 0xc000_0001, .cidr = 30 };
+    assert(!tbmlib::common::@cidr_valid(c));
+
+    Cidr{uint128} c6 = { .ip = 0, .cidr = 129 };
+    assert(!tbmlib::common::@cidr_valid(c6));
+
+    c6 = { .ip = 0, .cidr = 128 };
+    assert(tbmlib::common::@cidr_valid(c6));
 }
 
 fn void test_cidr_from_full_prefix() @test {
@@ -406,6 +426,38 @@ fn void test_add_inl() @test {
         assert(vnode.values[2] == 3);
     };
 
+}
+
+fn void test_update_inl_middle() @test {
+    TbmNode{3, uint, uint} root;
+    TempTbmAllocator{3, uint, uint} alloc;
+
+    @pool() {
+        Cidr{uint} cidr;
+
+        //0b11/2 -> 3
+        cidr = {.ip = 0xc0000000, .cidr = 2 };
+        root.insert(&alloc, cidr, 3)!!;
+
+        //0b00/2 -> 1
+        cidr = {.ip = 0, .cidr = 2 };
+        root.insert(&alloc, cidr, 1)!!;
+
+        //0b0/1 -> 6
+        cidr = {.ip = 0x00000000, .cidr = 1 };
+        root.insert(&alloc, cidr, 6)!!;
+
+        // Update the middle value (0b00/2): must not shift siblings.
+        cidr = {.ip = 0, .cidr = 2 };
+        root.insert(&alloc, cidr, 9)!!;
+
+        assert(root.internal == 0b01001010);
+        TbmValueNode{3, uint, uint} *vnode = root.next;
+        vnode --;
+        assert(vnode.values[0] == 6);
+        assert(vnode.values[1] == 9);
+        assert(vnode.values[2] == 3);
+    };
 }
 
 fn void test_add_inl_more() @test {
@@ -706,7 +758,7 @@ fn void test_memory_stats() @test {
 fn void test_slab_allocator_tbm_roundtrip() @test {
     Tbm{3, uint, uint} tbm;
     SlabAllocator{3, uint, uint} alloc;
-    alloc.init(32);
+    alloc.init(32)!!;
     defer alloc.release();
     tbm.alloc = &alloc;
 
@@ -766,6 +818,9 @@ fn void? load_ipv4_fib_tbm(Allocator alloc, String filename, FibTbm *tbm) {
         }
         idx++;
     }
+    if (idx % 2 != 0) {
+        return common::MALFORMED_INPUT~;
+    }
 }
 
 fn usz? load_ipv4_fib_tbm_count(Allocator alloc, String filename, FibTbm *tbm) {
@@ -789,6 +844,9 @@ fn usz? load_ipv4_fib_tbm_count(Allocator alloc, String filename, FibTbm *tbm) {
         }
         idx++;
     }
+    if (idx % 2 != 0) {
+        return common::MALFORMED_INPUT~;
+    }
     return idx / 2;
 }
 
@@ -806,6 +864,9 @@ fn void? load_ipv4_fib_ips(Allocator alloc, String filename, List{uint} *ips) {
             break;
         }
         idx++;
+    }
+    if (idx % 2 != 0) {
+        return common::MALFORMED_INPUT~;
     }
 }
 
@@ -832,6 +893,9 @@ fn void? load_ipv6_fib_tbm(Allocator alloc, String filename, FibTbm6 *tbm) {
         }
         idx++;
     }
+    if (idx % 2 != 0) {
+        return common::MALFORMED_INPUT~;
+    }
 }
 
 fn void? load_ipv6_fib_rangelist(Allocator alloc, String filename, FibIpRangeList6 *rl) {
@@ -855,6 +919,9 @@ fn void? load_ipv6_fib_rangelist(Allocator alloc, String filename, FibIpRangeLis
         }
         idx++;
     }
+    if (idx % 2 != 0) {
+        return common::MALFORMED_INPUT~;
+    }
 }
 
 fn void? assert_ipv6_fib_lookup_matches(Allocator alloc, String filename, FibSegList6 *seg_list, FibIpRangeList6 *rl, FibTbm6 *tbm) {
@@ -869,9 +936,9 @@ fn void? assert_ipv6_fib_lookup_matches(Allocator alloc, String filename, FibSeg
                 ip = net::ipv6_from_str(line)!.ip6.val;
             } else {
                 uint range_idx = seg_list.do_lpm(ip)!;
-                FibCidr6 range_cidr = iprange::cidr_from_iprange{uint128}(rl.[range_idx]);
+                FibCidr6 range_cidr = iprange::cidr_from_iprange{uint128}(rl.[range_idx])!!;
                 uint tbm_idx = tbm.lookup(ip)!;
-                FibCidr6 tbm_cidr = iprange::cidr_from_iprange{uint128}(rl.[tbm_idx]);
+                FibCidr6 tbm_cidr = iprange::cidr_from_iprange{uint128}(rl.[tbm_idx])!!;
                 assert(range_cidr.ip == tbm_cidr.ip);
                 assert(range_cidr.cidr == tbm_cidr.cidr);
             }
@@ -903,7 +970,7 @@ fn void ensure_ipv4_large_slab_benchmark_data() {
         return;
     }
 
-    fib_large_slab_alloc.init(1_000_000);
+    fib_large_slab_alloc.init(1_000_000)!!;
     fib_large_slab_tbm.alloc = &fib_large_slab_alloc;
     @pool() {
         String filename = "ipv4_fib_large.txt";
@@ -924,7 +991,7 @@ fn void? assert_ipv4_fib_lookup_matches(Allocator alloc, String filename, FibSeg
                 ip = net::ipv4_from_str(line)!.ip4.val;
             } else {
                 uint range_idx = seg_list.do_lpm(ip)!;
-                FibCidr range_cidr = iprange::cidr_from_iprange{uint}(rl.[range_idx]);
+                FibCidr range_cidr = iprange::cidr_from_iprange{uint}(rl.[range_idx])!!;
                 FibCidr tbm_cidr = tbm.lookup(ip)!;
                 assert(range_cidr.ip == tbm_cidr.ip);
                 assert(range_cidr.cidr == tbm_cidr.cidr);
@@ -939,7 +1006,7 @@ fn void? assert_ipv4_fib_lookup_matches(Allocator alloc, String filename, FibSeg
 fn void test_tbm_free() @test {
     FibTbm tbm;
     FibSlabAlloc slab;
-    slab.init(1000_000);
+    slab.init(1000_000)!!;
     defer slab.release();
     tbm.init_mem(&slab);
 
@@ -948,6 +1015,24 @@ fn void test_tbm_free() @test {
         tbm.free_mem();
     };
     assert(slab.slab.free_nodes == 1000_000);
+}
+
+fn void test_tbm_owned_free() @test {
+    Tbm{3, uint, uint} tbm;
+    tbm.init(64)!!;
+
+    Cidr{uint} cidr = {.ip = 0, .cidr = 3};
+    tbm.insert(cidr, 1)!!;
+    cidr = {.ip = 0x2000_0000, .cidr = 3};
+    tbm.insert(cidr, 2)!!;
+    cidr = {.ip = 0xe000_0000, .cidr = 6};
+    tbm.insert(cidr, 3)!!;
+
+    tbm.free();
+    assert(tbm.alloc == null);
+    assert(tbm.root.next == null);
+    assert(tbm.root.internal == 0);
+    assert(tbm.root.external == 0);
 }
 
 fn void test_ipv4_fib_lookup_consistency() @test {
