@@ -2,7 +2,6 @@ module tbmlibtest;
 import iprange;
 import tbmlib;
 import tbmlib::common;
-import tbmlib::bitmap;
 import tbmlib::bitmap_slab;
 import tbmlib::cidr;
 import std::io;
@@ -14,8 +13,8 @@ import std::net;
 import std::time::clock;
 
 const uint FIB_TBM_STRIDE = 5;
-alias BitmapType6 = tbmlib::bitmap::BitmapType {6};
-alias BitmapType7 = tbmlib::bitmap::BitmapType {7};
+alias BitmapType6 = tbmlib::BitmapType {6, uint, uint};
+alias BitmapType7 = tbmlib::BitmapType {7, uint, uint};
 alias UintBitmapSlab = bitmap_slab::BitmapSlab {uint};
 alias FibCidr = cidr::Cidr {uint};
 alias FibIpRangeList = iprange::IpRangeList {uint};
@@ -39,7 +38,8 @@ usz fib_large_slab_rules;
 bool fib_bench_ready;
 bool fib_large_slab_bench_ready;
 
-alias @bitmap_set6 = tbmlib::bitmap::@bitmap_set {6};
+alias @bitmap_set6 = tbmlib::@bitmap_set {6, uint, uint};
+alias @bitmap_set7 = tbmlib::@bitmap_set {7, uint, uint};
 
 fn void init_benchmarks() @init @if(env::BENCHMARKING) {
     set_benchmark_warmup_iterations(1);
@@ -54,8 +54,8 @@ fn void test_bitmap6() @test {
 
 fn void test_bitmap7() @test {
     BitmapType7 v;
-    assert(@bitmap_set{7}(v, 1) == 2);
-    assert(@bitmap_set{7}(v, 0) == 1);
+    assert(@bitmap_set7(v, 1) == 2);
+    assert(@bitmap_set7(v, 0) == 1);
 }
 
 fn void test_bitmap_slab_alloc_free() @test {
@@ -161,9 +161,12 @@ fn void test_bitmap_slab_cache_hit_ratio() @test {
     assert(slab.stats.cache_hit_ratio() == 0.5);
 }
 
-alias BitmapType3 = tbmlib::bitmap::BitmapType {3};
+alias BitmapType3 = tbmlib::BitmapType {3, uint, uint};
+alias InlStrideType3 = tbmlib::InlStrideType {3, uint, uint};
+alias StrideType3 = tbmlib::StrideType {3, uint, uint};
+alias StrideTypeInner3 = tbmlib::StrideTypeInner {3, uint, uint};
 fn void test_inl_check() @test {
-    InlStrideType{3} stride = {(StrideTypeInner)0b11};
+    InlStrideType3 stride = {(StrideTypeInner3)0b11};
     //map == 0b01000101
     BitmapType3 bm = 0b01000000;
 
@@ -176,7 +179,7 @@ fn void test_inl_check() @test {
 }
 
 fn void test_exl_check() @test {
-    StrideType{3} stride = { 0b111 };
+    StrideType3 stride = { 0b111 };
     BitmapType3 bm = 0b0;
 
     assert(@catch(bm.check_exl_bitmap(stride)) == tbmlib::common::MISSING);
