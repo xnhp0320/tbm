@@ -204,9 +204,13 @@ struct TbmNode {
     void *next;
 }
 
+// Compile-time check that ValueType fits in a TbmNode. A module-level $assert
+// cannot reference generic type parameters (parse error on 0.8.5), hence this
+// dummy generic decl: instantiating it runs the macro, which $asserts and
+// returns false so the decl vanishes via @if.
 int dummy <STRIDE, KeyType, ValueType> @if(assert_types());
 macro bool assert_types() <STRIDE, KeyType, ValueType> @local {
-    $assert TbmNode::size >= ValueType::size;
+    $assert TbmNode::size >= ValueType::size : "ValueType too large for TbmNode, use a pointer";
     return false;
 }
 
@@ -227,13 +231,12 @@ fn bool TbmNode.empty_node(&self) {
     return (self.internal == 0 && self.external == 0);
 }
 
-typedef TrivalAllocator (TbmAllocator) = uptr;
-fn void*? TrivalAllocator.alloc(&self, usz nodes_count) @dynamic {
+typedef TrivialAllocator (TbmAllocator) = uptr;
+fn void*? TrivialAllocator.alloc(&self, usz nodes_count) @dynamic {
     return calloc((sz)(nodes_count * TbmNode::size));
 }
-fn void TrivalAllocator.free(&self, void *ptr, usz node_count) @dynamic {
-    (void)node_count;
-    return free(ptr);
+fn void TrivialAllocator.free(&self, void *ptr, usz) @dynamic {
+    free(ptr);
 }
 
 typedef TempTbmAllocator (TbmAllocator) = uptr;
@@ -241,10 +244,8 @@ fn void*? TempTbmAllocator.alloc(&self, usz nodes_count) @dynamic {
     return tcalloc((sz)(nodes_count * TbmNode::size));
 }
 
-fn void TempTbmAllocator.free(&self, void *ptr, usz node_count) @dynamic {
-    (void)ptr;
-    (void)node_count;
-}
+// Temp allocations are bulk-released by the temp arena; nothing to do.
+fn void TempTbmAllocator.free(&self, void*, usz) @dynamic {}
 
 alias TbmBitmapSlab @private = tbmlib::bitmap_slab::BitmapSlab {TbmNode};
 struct SlabAllocator (TbmAllocator) {
@@ -307,10 +308,8 @@ fn ValueType *TbmValueIter.prev(&self) {
 }
 
 fn ValueType *TbmValueIter.moveto(&self, uint pos) {
-    uint i = 0;
-    while (i < pos) {
+    for (uint i = 0; i < pos; i++) {
         self.next();
-        i ++;
     }
     return self.get();
 }
@@ -336,7 +335,7 @@ macro StrideType @key_shift(KeyType #ip) {
 
 fn usz count_inl_nodes(BitmapType internal) {
     usz count = (usz)internal.popcount();
-    return count == 0 ? 0 : (count + ROUTE_NUM) / ROUTE_NUM;
+    return count == 0 ? 0 : (count + ROUTE_NUM - 1) / ROUTE_NUM;
 }
 
 fn usz TbmNode.count_inl_nodes(&self) {
@@ -373,19 +372,12 @@ fn TbmNode*? TbmNode.insert_exl_node(&self, TbmAllocator alloc, StrideType strid
 
 fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Cidr prefix, ValueType v) {
     StrideType stride = @cidr_shift(&prefix);
-    BitmapType external = self.external;
-    //in case uint128, we have to cast to usz.
-    usz prev_count = (usz)external.popcount();
-    external = @bitmap_set(external, stride.val);
-    usz post_count = (usz)external.popcount();
-    if (post_count == prev_count) {
+    if (@bitmap_check(self.external, stride.val)) {
         return self.next_exl(stride).insert(alloc, prefix, v);
-    } else {
-        TbmNode *node = self.insert_exl_node(alloc, stride)!;
-        return node.insert(alloc, prefix, v);
     }
+    TbmNode *node = self.insert_exl_node(alloc, stride)!;
+    return node.insert(alloc, prefix, v);
 }
-
 fn ValueType* TbmNode.get_value(&self, usz pos) {
     usz offset = (usz)self.internal.count_bits(pos);
     usz node_offset = (offset + ROUTE_NUM) / ROUTE_NUM;
@@ -445,7 +437,7 @@ fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Cidr prefix, ValueType v)
 
     usz prev_count = self.count_inl_nodes();
     BitmapType internal = @bitmap_set(self.internal, pos);
-    usz post_count = (usz)(internal.popcount() + ROUTE_NUM) / ROUTE_NUM;
+    usz post_count = count_inl_nodes(internal);
     if (post_count == prev_count) {
         self.insert_value_inplace(pos, v);
     } else {

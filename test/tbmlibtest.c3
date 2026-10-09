@@ -4,6 +4,7 @@ import tbmlib;
 import tbmlib::common;
 import tbmlib::bitmap_slab;
 import tbmlib::cidr;
+import tbmlib::fibload;
 import std::io;
 import std::io::file;
 import std::collections::list;
@@ -21,7 +22,7 @@ alias FibIpRangeList = iprange::IpRangeList {uint};
 alias FibSegList = iprange::SegList {uint};
 alias FibTbm = Tbm {FIB_TBM_STRIDE, uint, FibCidr};
 alias FibAlloc = TempTbmAllocator {FIB_TBM_STRIDE, uint, FibCidr};
-alias FibBenchAlloc = TrivalAllocator {FIB_TBM_STRIDE, uint, FibCidr};
+alias FibBenchAlloc = TrivialAllocator {FIB_TBM_STRIDE, uint, FibCidr};
 alias FibSlabAlloc = SlabAllocator {FIB_TBM_STRIDE, uint, FibCidr};
 alias FibCidr6 = cidr::Cidr {uint128};
 alias FibIpRangeList6 = iprange::IpRangeList {uint128};
@@ -755,6 +756,32 @@ fn void test_memory_stats() @test {
     };
 }
 
+fn void test_inl_value_packing_exact() @test {
+    // Tbm{5, uint, uint}: TbmNode is 16 bytes, ROUTE_NUM = 4, so four inl
+    // values fit in exactly one TbmValueNode: 1 root + 1 value node.
+    Tbm{5, uint, uint} tbm;
+    TempTbmAllocator{5, uint, uint} alloc;
+    tbm.alloc = &alloc;
+
+    @pool() {
+        tbm.insert({ .ip = 0, .cidr = 0 }, 1)!!;
+        tbm.insert({ .ip = 0x8000_0000, .cidr = 1 }, 2)!!;
+        tbm.insert({ .ip = 0x4000_0000, .cidr = 2 }, 3)!!;
+        tbm.insert({ .ip = 0xc000_0000, .cidr = 2 }, 4)!!;
+
+        assert(tbm.memory_stats().tbm_nodes == 2);
+        assert(tbm.lookup(0x8000_0000)!! == 2);
+        assert(tbm.lookup(0x5000_0000)!! == 3);
+        assert(tbm.lookup(0xc000_0000)!! == 4);
+
+        // A fifth value crosses the node boundary: one more value node.
+        tbm.insert({ .ip = 0x2000_0000, .cidr = 3 }, 5)!!;
+        assert(tbm.memory_stats().tbm_nodes == 3);
+        assert(tbm.lookup(0x2000_0000)!! == 5);
+        assert(tbm.lookup(0x5000_0000)!! == 3);
+    };
+}
+
 fn void test_slab_allocator_tbm_roundtrip() @test {
     Tbm{3, uint, uint} tbm;
     SlabAllocator{3, uint, uint} alloc;
@@ -797,57 +824,14 @@ fn void test_slab_allocator_tbm_roundtrip() @test {
     assert(alloc.slab.free_nodes == alloc.slab.storage.len);
 }
 
-fn void? load_ipv4_fib_tbm(Allocator alloc, String filename, FibTbm *tbm) {
-    File f = file::open(filename, "r")!;
-    defer (void)f.close();
-    usz idx = 0;
-    InetAddress addr;
-
-    while (1) {
-        if (try String line = io::readline(alloc, &f)) {
-            if (idx % 2 == 0) {
-                addr = net::ipv4_from_str(line)!;
-            } else {
-                uint prefixlen = line.to_uint()!;
-                FibCidr c;
-                c.from(&addr, prefixlen);
-                tbm.insert(c, c)!;
-            }
-        } else {
-            break;
-        }
-        idx++;
-    }
-    if (idx % 2 != 0) {
-        return common::MALFORMED_INPUT~;
-    }
+fn void? insert_fib_entry(InetAddress *addr, uint prefixlen, void *aux) {
+    FibCidr c;
+    c.from(addr, prefixlen);
+    ((FibTbm*)aux).insert(c, c)!;
 }
 
-fn usz? load_ipv4_fib_tbm_count(Allocator alloc, String filename, FibTbm *tbm) {
-    File f = file::open(filename, "r")!;
-    defer (void)f.close();
-    usz idx = 0;
-    InetAddress addr;
-
-    while (1) {
-        if (try String line = io::readline(alloc, &f)) {
-            if (idx % 2 == 0) {
-                addr = net::ipv4_from_str(line)!;
-            } else {
-                uint prefixlen = line.to_uint()!;
-                FibCidr c;
-                c.from(&addr, prefixlen);
-                tbm.insert(c, c)!!;
-            }
-        } else {
-            break;
-        }
-        idx++;
-    }
-    if (idx % 2 != 0) {
-        return common::MALFORMED_INPUT~;
-    }
-    return idx / 2;
+fn usz? load_ipv4_fib_tbm(Allocator alloc, String filename, FibTbm *tbm) {
+    return fibload::foreach_ipv4_fib_entry(alloc, filename, &insert_fib_entry, tbm);
 }
 
 fn void? load_ipv4_fib_ips(Allocator alloc, String filename, List{uint} *ips) {
@@ -974,7 +958,7 @@ fn void ensure_ipv4_large_slab_benchmark_data() {
     fib_large_slab_tbm.alloc = &fib_large_slab_alloc;
     @pool() {
         String filename = "ipv4_fib_large.txt";
-        fib_large_slab_rules = load_ipv4_fib_tbm_count(tmem, filename, &fib_large_slab_tbm)!!;
+        fib_large_slab_rules = load_ipv4_fib_tbm(tmem, filename, &fib_large_slab_tbm)!!;
     };
     fib_large_slab_bench_ready = true;
 }

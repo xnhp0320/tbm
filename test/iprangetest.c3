@@ -305,3 +305,49 @@ fn void test_do_lpm_ipv6_0() @test {
     assert(@catch(sg_list.do_lpm(0x2001_0db7_ffff_ffff_ffff_ffff_ffff_ffff)) == common::MISSING);
     assert(@catch(sg_list.do_lpm(0x2001_0db8_0000_0000_0000_0000_0000_0010)) == common::MISSING);
 }
+
+fn void test_iprange_from_cidr_edge_prefixes() @test {
+    // /0 must not shift by the full bit width (used to panic).
+    IpRange r = iprange::iprange_from_cidr{uint}({ .ip = 0, .cidr = 0 });
+    assert(r.start == 0);
+    assert(r.end == uint::max);
+
+    // /32 has no host bits.
+    r = iprange::iprange_from_cidr{uint}({ .ip = 0x0a00_0001, .cidr = 32 });
+    assert(r.start == 0x0a00_0001);
+    assert(r.end == 0x0a00_0001);
+
+    IpRange6 r6 = iprange::iprange_from_cidr{uint128}({ .ip = 0, .cidr = 0 });
+    assert(r6.start == 0);
+    assert(r6.end == uint128::max);
+}
+
+fn void test_build_segs_ending_at_max() @test {
+    IpRangeList rl;
+    rl.init(mem);
+    defer rl.free();
+    // Both ranges end at uint::max; advancing past the last segment must not wrap to 0.
+    rl.push(iprange::iprange_from_cidr{uint}({ .ip = 0x8000_0000, .cidr = 1 }));
+    rl.push(iprange::iprange_from_cidr{uint}({ .ip = 0xc000_0000, .cidr = 2 }));
+
+    SegList sg_list = rl.build_segs()!!;
+    defer sg_list.free();
+    assert(sg_list.len() == 2);
+    assert(sg_list[0] == (Seg){ .r = {0x8000_0000, 0xbfff_ffff}, .idx = 0 });
+    assert(sg_list[1] == (Seg){ .r = {0xc000_0000, 0xffff_ffff}, .idx = 1 });
+    // No bogus wrapped segment: lookups below 0x8000_0000 must miss.
+    assert(@catch(sg_list.do_lpm(0x7fff_ffff)) == common::MISSING);
+    assert(sg_list.do_lpm(0xffff_ffff)!! == 1);
+}
+
+fn void test_build_segs_default_route() @test {
+    IpRangeList rl;
+    rl.init(mem);
+    defer rl.free();
+    rl.push(iprange::iprange_from_cidr{uint}({ .ip = 0, .cidr = 0 }));
+
+    SegList sg_list = rl.build_segs()!!;
+    defer sg_list.free();
+    assert(sg_list.len() == 1);
+    assert(sg_list[0] == (Seg){ .r = {0, 0xffff_ffff}, .idx = 0 });
+}

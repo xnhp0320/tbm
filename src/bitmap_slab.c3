@@ -75,20 +75,17 @@ fn bool BitmapSlab.bit_is_free(&self, usz offset) {
 
 fn bool BitmapSlab.range_matches(&self, usz offset, usz node_count, bool want_free) {
     assert(offset + node_count <= self.storage.len);
-    usz i = 0;
-    while (i < node_count) {
+    for (usz i = 0; i < node_count; i++) {
         if (self.bit_is_free(offset + i) != want_free) {
             return false;
         }
-        i++;
     }
     return true;
 }
 
 fn void BitmapSlab.set_range(&self, usz offset, usz node_count, bool mark_free) {
     assert(offset + node_count <= self.storage.len);
-    usz i = 0;
-    while (i < node_count) {
+    for (usz i = 0; i < node_count; i++) {
         usz bit_offset = offset + i;
         usz word_idx = bit_offset / BITS_PER_WORD;
         usz bit_idx = bit_offset % BITS_PER_WORD;
@@ -98,7 +95,6 @@ fn void BitmapSlab.set_range(&self, usz offset, usz node_count, bool mark_free) 
         } else {
             self.bitmap[word_idx] &= ~bit;
         }
-        i++;
     }
 }
 
@@ -110,10 +106,8 @@ fn void BitmapSlab.clear_range(&self, usz offset, usz node_count) {
 
 fn void BitmapSlab.cache_remove(&self, usz idx) {
     assert(idx < self.cache_entries);
-    usz i = idx;
-    while (i + 1 < self.cache_entries) {
+    for (usz i = idx; i + 1 < self.cache_entries; i++) {
         self.segment_cache[i] = self.segment_cache[i + 1];
-        i++;
     }
     self.cache_entries--;
 }
@@ -121,14 +115,11 @@ fn void BitmapSlab.cache_remove(&self, usz idx) {
 fn sz BitmapSlab.find_cache_fit(&self, usz node_count) {
     sz best = -1;
     usz best_len = 0;
-    usz i = 0;
-    while (i < self.cache_entries) {
-        FreeSegment seg = self.segment_cache[i];
+    foreach (i, seg : self.segment_cache[:self.cache_entries]) {
         if (seg.len >= node_count && (best < 0 || seg.len < best_len)) {
             best = (sz)i;
             best_len = seg.len;
         }
-        i++;
     }
     return best;
 }
@@ -165,13 +156,11 @@ fn void BitmapSlab.cache_insert(&self, usz offset, usz node_count) {
 
     usz smallest_idx = 0;
     usz smallest_len = self.segment_cache[0].len;
-    i = 1;
-    while (i < self.cache_entries) {
-        if (self.segment_cache[i].len < smallest_len) {
-            smallest_idx = i;
-            smallest_len = self.segment_cache[i].len;
+    foreach (si, seg : self.segment_cache[1..self.cache_entries - 1]) {
+        if (seg.len < smallest_len) {
+            smallest_idx = (usz)(si + 1);
+            smallest_len = seg.len;
         }
-        i++;
     }
     if (merged.len > smallest_len) {
         self.segment_cache[smallest_idx] = merged;

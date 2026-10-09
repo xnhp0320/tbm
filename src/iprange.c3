@@ -20,12 +20,10 @@ alias Cidr @private = cidr::Cidr {KeyType};
 fn IpRange iprange_from_cidr(Cidr cidr) {
     IpRange self;
     self.start = cidr.ip;
-    if (cidr.cidr < $Typeof(cidr.ip)::size * 8) {
-        self.end = cidr.ip | (((KeyType)1 << ($Typeof(cidr.ip)::size * 8 - cidr.cidr)) - 1);
-    } else {
-        self.end = cidr.ip;
-    }
-
+    // cidr == 0 must not shift by the full bit width; cidr == bits leaves no host bits.
+    KeyType host_mask = cidr.cidr == 0 ? KeyType::max
+        : ((KeyType)1 << (KeyType::size * 8 - cidr.cidr)) - 1;
+    self.end = cidr.ip | host_mask;
     return self;
 }
 
@@ -44,38 +42,23 @@ fn Cidr? cidr_from_iprange(IpRange r) {
 alias IpRangeList = List {IpRange};
 
 import std::io;
-import std::io::file;
 import std::net;
 import std::sort;
 import std::collections::priorityqueue;
+import tbmlib::fibload;
 
 fn bool IpRange.less(&self, IpRange other) {
     return self.start < other.start; 
 }
 
-fn void? load_ipv4_rangelist(Allocator alloc, String filename, IpRangeList *rl) {
-    File f = file::open(filename, "r")!;
-    defer (void)f.close();
-    usz idx = 0;
-    InetAddress addr;
-    while (1) {
-        if (try String line = io::readline(alloc, &f)) {
-            if (idx % 2 == 0) {
-                addr = net::ipv4_from_str(line)!;
-            } else {
-                uint cidr = line.to_uint()!;
-                Cidr c;
-                c.from(&addr, cidr);
-                rl.push(iprange_from_cidr(c));
-            }
-        } else {
-            break;
-        }
-        idx ++;
-    }
-    if (idx % 2 != 0) {
-        return common::MALFORMED_INPUT~;
-    }
+fn void? push_cidr_range(InetAddress *addr, uint cidr, void *aux) @private {
+    Cidr c;
+    c.from(addr, cidr);
+    ((IpRangeList*)aux).push(iprange_from_cidr(c));
+}
+
+fn usz? load_ipv4_rangelist(Allocator alloc, String filename, IpRangeList *rl) {
+    return fibload::foreach_ipv4_fib_entry(alloc, filename, &push_cidr_range, rl);
 }
 
 struct IndexedRange {
@@ -237,6 +220,10 @@ fn SegList? IpRangeList.build_segs(&self) {
         if (top.end >= start) {
             uint winner = pick_winner(&in_heap, &items)!;
             sg_list.push({.r = {start, top.end}, .idx = winner });
+            // top.end + 1 would wrap to 0; the address space is exhausted.
+            if (top.end == KeyType::max) {
+                break;
+            }
             start = top.end + 1;
         }
         top = h.pop()!;

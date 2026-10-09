@@ -2,43 +2,25 @@ module tbm;
 
 import tbmlib;
 import tbmlib::cidr;
-import tbmlib::common;
+import tbmlib::fibload;
 import std::io;
-import std::io::file;
 import std::net;
 
 alias FibCidr = cidr::Cidr {uint};
 
-fn usz? load_ipv4_fib_tbm(Allocator alloc, String filename, Tbm *tbm) <Tbm> {
-    File f = file::open(filename, "r")!;
-    defer (void)f.close();
-    usz idx = 0;
-    InetAddress addr;
+fn void? insert_fib_entry(InetAddress *addr, uint prefixlen, void *aux) <Tbm> {
+    FibCidr c;
+    c.from(addr, prefixlen);
+    return ((Tbm*)aux).insert(c, c);
+}
 
-    while (1) {
-        if (try String line = io::readline(alloc, &f)) {
-            if (idx % 2 == 0) {
-                addr = net::ipv4_from_str(line)!;
-            } else {
-                uint prefixlen = line.to_uint()!;
-                FibCidr c;
-                c.from(&addr, prefixlen);
-                tbm.insert(c, c)!!;
-            }
-        } else {
-            break;
-        }
-        idx++;
-    }
-    if (idx % 2 != 0) {
-        return common::MALFORMED_INPUT~;
-    }
-    return idx / 2;
+fn usz? load_ipv4_fib_tbm(Allocator alloc, String filename, Tbm *tbm) <Tbm> {
+    return fibload::foreach_ipv4_fib_entry(alloc, filename, &insert_fib_entry{Tbm}, tbm);
 }
 
 macro gen_stride_report($s) {
     Tbm{$s, uint, FibCidr} tbm;
-    TrivalAllocator{$s, uint, FibCidr} alloc;
+    TrivialAllocator{$s, uint, FibCidr} alloc;
     tbm.alloc = &alloc;
 
     usz rules = load_ipv4_fib_tbm{Tbm{$s, uint, FibCidr}}(mem, "ipv4_fib_large.txt", &tbm)!!;
